@@ -15,7 +15,6 @@ import org.openqa.selenium.*;
 import org.openqa.selenium.Proxy;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.DesiredCapabilities;
-import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
@@ -34,20 +33,26 @@ public class TestOtus8 {
     private String href = "http://ya.ru";
     private static final Logger logger = LogManager.getLogger(TestOtus8.class);
     private WebDriverWait wait;
-    String bro = "CHROME";
+    String bro;
     ProxyServer server;
     DriverType type;
     List<WebElement> cats = new ArrayList<>();
     List<String> catsUrl = new ArrayList<>();
+    String csv = "data.csv";
+    CSVWriter writer = new CSVWriter(new FileWriter(csv));
+
+    public TestOtus8() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
-        if(System.getProperty("browser")!=null ){bro = System.getProperty("browser").toUpperCase();}
-        logger.info("Before " + bro); //mvn clean test -Dbrowser='cHrOmE'
+
+        bro = System.getProperty("browser", "CHROME").toUpperCase();
         type = DriverType.valueOf(bro);
-        driver = WebDriverFactory.create(DriverType.CHROME);
+        logger.info("Before {} browser", bro); //mvn clean test -Dbrowser='cHrOmE'
+
+        driver = WebDriverFactory.create(type);
         driver.manage().timeouts().implicitlyWait(4, TimeUnit.SECONDS); //неявное
-        //driver.manage().window().fullscreen();
         wait = new WebDriverWait(driver, 4, 125);
     }
 
@@ -66,34 +71,63 @@ public class TestOtus8 {
     }
 
 
-
-    @Test
-    public void getNames() throws IOException {
-
-
+    public void getAllCats(){
         driver.get("https://www.drive2.ru/cars/?sort=selling");
         cats = driver.findElements(By.cssSelector("span.c-makes__item a.c-link.c-link--text"));
         logger.info("cats size \n{}", cats.size());
-        //cats.forEach(cat -> logger.info(cat.getAttribute("href")));
+
         for (WebElement cat : cats) { //все категории машин
             catsUrl.add(cat.getAttribute("href"));
         }
+    }
 
-        String csv = "data.csv";
-        CSVWriter writer = new CSVWriter(new FileWriter(csv));
+    public String safeFindLocator(By locator){
+        String s = "*** no found";
+        try {
+            s = driver.findElement(locator).getText();
+        }catch (Exception e)
+        {
+            logger.info("No such parameter {}", e.getStackTrace());
+        }
+        return s;
+    };
 
-        for (String s : catsUrl) { //просмотр каждой марки авто
+    public void openEachAuto(List<String> cars) throws IOException {
+        for (String a : cars) {
 
-            logger.info("get " + s);
+            driver.get(a);
+
+            String p1 = safeFindLocator(By.cssSelector("ul.c-car-forsale__info li:nth-child(5)"));
+            String p2 = safeFindLocator(By.cssSelector("div.c-car-forsale__price strong"));
+            String p3 = safeFindLocator(By.cssSelector("a[data-ym-target='car2brand']"));
+            String p4 = safeFindLocator(By.cssSelector("h1.c-car-info__caption"));
+            String p5 = safeFindLocator(By.cssSelector("ul.c-car-forsale__info li:nth-child(2)"));
+
+            logger.info("URL    : {}", a);
+            logger.info("year   : {}", p1);
+            logger.info("price  : {}", p2);
+            logger.info("brend  : {}", p3);
+            logger.info("model  : {}", p4);
+            logger.info("engine : {}", p5);
+
+            String [] record = {p1,p2,p3,p4,p5};
+            //в csv-файл (ссылка, год автомобиля, цена, марка, модель, объем двигателя)
+            writer.writeNext(record);
+            writer.flush();
+        }
+    }
+
+    public List<String> findCarListAndGet(String s) throws IOException {
+
+            logger.info("get cat \"{}\"", s);
             driver.get(s);
+
             List<WebElement> cards = new ArrayList<>();
             int currentSize = -1;
 
             while (currentSize < cards.size()) {
                 currentSize = cards.size();
-
                 ((JavascriptExecutor) driver).executeScript("window.scrollBy(0, 5000)");
-
                 try {
                     wait.until(and(
                             invisibilityOfElementLocated(By.cssSelector("button.[data-action='catalog.morecars']")),
@@ -102,44 +136,22 @@ public class TestOtus8 {
                 } catch (TimeoutException ex) {
                     logger.info("all cars loaded");
                 }
-
                 iWantScreenShot();
                 cards = driver.findElements(By.cssSelector(".c-car-card-sa"));
             }
-
-
             logger.info("--------------------------\n{}", cards.size());
-
             List<String> cars = new ArrayList<>();
             for (WebElement c : cards) {
                 cars.add(getURL(c)); // список объявлений внутри каждой марки
             }
-            // открыть каждое объявление, забрать данные
+        return cars;
+    }
 
-
-            for (String a : cars) {
-                //в csv-файл (ссылка, год автомобиля, цена, марка, модель, объем двигателя)
-                driver.get(a);
-                String p1 = driver.findElement(By.cssSelector("ul.c-car-forsale__info li:nth-child(5)")).getText();
-                String p2 = driver.findElement(By.cssSelector("div.c-car-forsale__price strong")).getText();
-                String p3 = driver.findElement(By.cssSelector("a[data-ym-target='car2brand']")).getText();
-                String p4 = driver.findElement(By.cssSelector("h1.c-car-info__caption")).getText();
-                String p5 = driver.findElement(By.cssSelector("ul.c-car-forsale__info li:nth-child(2)")).getText();
-
-                logger.info("URL    :" + a);
-                logger.info("year   :" + p1);
-                logger.info("price  :" + p2);
-                logger.info("brend  :" + p3);
-                logger.info("model  :" + p4);
-                logger.info("engine :" + p5);
-
-                String [] record = {p1,p2,p3,p4,p5};
-                writer.writeNext(record);
-                writer.flush();
-
-
-            }
-
+    @Test
+    public void getNames() throws IOException {
+        getAllCats();
+        for (String s : catsUrl) { // список марок
+            openEachAuto(findCarListAndGet(s));
         }
         writer.close();
     }
